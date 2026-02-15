@@ -1,6 +1,7 @@
 package app
 
 import (
+	"log"
 	"net/http"
 
 	"agenteur.ai/api/internal/config"
@@ -24,6 +25,7 @@ func NewApp() *App {
 }
 
 func (a *App) Start() error {
+	log.Println("Starting server on port", a.Config.Port)
 	return a.Server.ListenAndServe()
 }
 
