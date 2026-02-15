@@ -5,6 +5,8 @@ import (
 	"net/http"
 
 	"agenteur.ai/api/internal/config"
+
+	"github.com/go-chi/chi/v5"
 )
 
 type App struct {
@@ -30,10 +32,11 @@ func (a *App) Start() error {
 }
 
 func NewRouter() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
+	r := chi.NewRouter()
+
+	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("server is awake"))
 	})
-	return mux
+
+	return r
 }
