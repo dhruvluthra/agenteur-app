@@ -4,6 +4,7 @@ Agenteur is a deployment platform for AI agents that utilize coding harnesses li
 
 # Instructions
 1. Always create a new branch when implementing a feature. 
+2. Use conventional commits whenever commiting gots to you git branch. 
 
 # Directory Overview 
 
