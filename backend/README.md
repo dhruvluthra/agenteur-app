@@ -41,5 +41,6 @@ make db-reset
 
 - Local uses `.env.local` loaded by the backend app when `ENV=local`.
 - Dev and production must provide `DATABASE_URL` via deployment environment/secret manager.
+- Configure browser origins with `CORS_ALLOWED_ORIGINS` as a comma-separated list.
 - Keep credentials out of git.
 - If you change `POSTGRES_DB` after data already exists, run `make db-reset` once to reinitialize.
