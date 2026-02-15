@@ -1,6 +1,10 @@
 package config
 
-import "os"
+import (
+	"os"
+
+	"github.com/joho/godotenv"
+)
 
 type Config struct {
 	Env         string
@@ -12,6 +16,10 @@ func Load() *Config {
 	env := os.Getenv("ENV")
 	if env == "" {
 		env = "local"
+	}
+	if env == "local" {
+		// Non-fatal: local development can still run with exported env vars.
+		_ = godotenv.Load(".env.local")
 	}
 	port := os.Getenv("PORT")
 	if port == "" {
