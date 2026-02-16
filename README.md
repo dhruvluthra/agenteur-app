@@ -8,4 +8,5 @@ Agenteur is a deployment platform for AI agents that leverage agentic coding har
 The platform has a separate backend and frontend. 
 
 * The backend web service live in `/backend`. Our backend service is written in Go. 
-* The frontend lives in `/frontend`. The backend is built in TypeScript/React using Vite as the design system. 
+* The frontend lives in `/frontend`. The backend is built in TypeScript/React using Vite as the design system.
+
