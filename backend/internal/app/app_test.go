@@ -7,16 +7,31 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	adminhandlers "agenteur.ai/api/internal/administration/handlers"
+	authhandlers "agenteur.ai/api/internal/auth/handlers"
 	"agenteur.ai/api/internal/config"
 	imiddleware "agenteur.ai/api/internal/middleware"
 )
 
-func TestNewRouterHealthIncludesRequestID(t *testing.T) {
+func testRouter() http.Handler {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&buf, nil))
-	cfg := &config.Config{CORSAllowedOrigins: []string{"http://localhost:5173"}}
+	cfg := &config.Config{
+		CORSAllowedOrigins: []string{"http://localhost:5173"},
+		JWTSecret:          "test-secret",
+	}
+	authMW := authhandlers.NewAuthMiddleware(cfg.JWTSecret)
+	roleMW := adminhandlers.NewRoleMiddleware(nil, nil, nil)
+	return NewRouter(&RouterDeps{
+		Config:         cfg,
+		Logger:         logger,
+		AuthMiddleware: authMW,
+		RoleMiddleware: roleMW,
+	})
+}
 
-	h := NewRouter(cfg, logger)
+func TestNewRouterHealthIncludesRequestID(t *testing.T) {
+	h := testRouter()
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	res := httptest.NewRecorder()
@@ -31,11 +46,7 @@ func TestNewRouterHealthIncludesRequestID(t *testing.T) {
 }
 
 func TestNewRouterCORSPreflight(t *testing.T) {
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewJSONHandler(&buf, nil))
-	cfg := &config.Config{CORSAllowedOrigins: []string{"http://localhost:5173"}}
-
-	h := NewRouter(cfg, logger)
+	h := testRouter()
 
 	req := httptest.NewRequest(http.MethodOptions, "/health", nil)
 	req.Header.Set("Origin", "http://localhost:5173")

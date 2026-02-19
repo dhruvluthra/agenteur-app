@@ -913,7 +913,7 @@ type EmailService interface {
 
 ### Phase 1: Database & Infrastructure
 
-- **T-001:** Create database migration for users, orgs, memberships, tokens, invitations
+- [x] **T-001:** Create database migration for users, orgs, memberships, tokens, invitations
   - _Implements:_ ER-001, ER-005, ER-006, ER-007, ER-008, ER-009
   - _Description:_ Create goose migration file with all 5 tables, 2 enum types, and indexes as specified in Section 3. Includes pgcrypto extension for `gen_random_uuid()`.
   - _Files:_
@@ -921,7 +921,7 @@ type EmailService interface {
   - _Done condition:_ `make db-reset && make migrate-up` completes without error. `make migrate-status` shows migration applied. `make migrate-down && make migrate-up` round-trips cleanly.
   - _Dependencies:_ None
 
-- **T-002:** Upgrade to pgxpool, extend config, add shared database package, and add Content-Type middleware
+- [x] **T-002:** Upgrade to pgxpool, extend config, add shared database package, and add Content-Type middleware
   - _Implements:_ ER-001, ER-002, ER-003
   - _Description:_ Change `App.DB` from `*pgx.Conn` to `*pgxpool.Pool` in `app.go`. Change `pgx.Connect()` to `pgxpool.New()`. Add graceful shutdown (OS signal handler that calls `pool.Close()` and `server.Shutdown()`). Extend `Config` with JWT and auth fields: `JWTSecret`, `AccessTokenTTL` (default 15m), `RefreshTokenTTL` (default 168h), `InviteBaseURL` (default `http://localhost:5173/invitations`), `InviteTokenTTL` (default 72h), `BcryptCost` (default 12). No `JWTRefreshSecret` — refresh tokens are opaque random tokens (not JWTs), so only one JWT signing secret is needed. Update `.env.example` with new vars. Update CORS middleware to include `Access-Control-Allow-Credentials: true`. Create shared `database` package (`backend/internal/database/database.go`) containing the `DBTX` interface and `WithTx(ctx, pool, fn)` transaction helper — both auth and administration domains import `DBTX` from here instead of cross-importing from each other. Create `RequireJSONContentType` middleware (`backend/internal/middleware/content_type.go`) that rejects `POST/PUT/PATCH/DELETE` requests without `Content-Type: application/json` with a `415 Unsupported Media Type` response. Wire this middleware on the `/api` route group in `app.go` as the CSRF mitigation strategy.
   - _Files:_
@@ -938,7 +938,7 @@ type EmailService interface {
   - _Done condition:_ `go build ./...` succeeds. `go test ./internal/config/...` passes. `go test ./internal/middleware/...` passes (including Content-Type enforcement tests: POST without JSON returns 415, POST with JSON passes, GET without JSON passes). `go test ./internal/database/...` passes. App starts and connects to DB with pool.
   - _Dependencies:_ None
 
-- **T-003:** Add Go dependencies and create crypto utilities
+- [x] **T-003:** Add Go dependencies and create crypto utilities
   - _Implements:_ ER-001, ER-002, ER-003, ER-007
   - _Description:_ Add `golang.org/x/crypto` and `github.com/golang-jwt/jwt/v5` to go.mod. Create crypto utilities in the auth `services` sub-package with: (1) `password.go` — `HashPassword(plain string) (string, error)` using bcrypt with configurable cost, `CheckPassword(hash, plain string) error` wrapping bcrypt.CompareHashAndPassword. (2) `jwt.go` — `GenerateAccessToken(claims types.TokenClaims, secret string, ttl time.Duration) (string, error)` using HS256, `ValidateAccessToken(tokenString, secret string) (*types.TokenClaims, error)`, `ParseAccessTokenUnvalidated(tokenString, secret string) (*types.TokenClaims, error)` — verifies signature but skips expiry validation (for logout). (3) `token.go` — `GenerateRandomToken() (raw string, hash string, err error)` using 32 bytes from `crypto/rand`, hex-encoded raw, SHA-256 hash.
   - _Files:_
@@ -952,7 +952,7 @@ type EmailService interface {
   - _Done condition:_ `go test ./internal/auth/services/... -run "TestPassword|TestJWT|TestToken"` passes. Tests cover: password hashing + verification + wrong password, JWT generation + validation + expired token + bad secret, token generation uniqueness + hash verification.
   - _Dependencies:_ None
 
-- **T-004:** Create domain types for both packages
+- [x] **T-004:** Create domain types for both packages
   - _Implements:_ ER-001, ER-005, ER-006, ER-007, ER-008
   - _Description:_ Create Go structs matching the database schema across both domain type packages. **Auth types:** `User` (all columns), `CreateUserParams` (email, password_hash, first_name, last_name), `UpdateUserParams` (first_name, last_name), `RefreshToken`, `TokenClaims` (extends `jwt.RegisteredClaims` with `UserID`, `Email`, `IsSuperadmin`), `UserRepository` and `RefreshTokenRepository` interfaces (import `database.DBTX` from the shared `database` package created in T-002). **Administration types:** `Organization`, `CreateOrgParams` (name, slug), `UpdateOrgParams` (name), `OrgMembership`, `MemberWithUser` (join of membership + user for member listing), `OrgWithRole` (join of org + role for user's org listing), `Invitation`, `InvitationWithOrg` (join with org name + inviter name), `CreateInvitationParams`, `OrganizationRepository`, `MembershipRepository`, `InvitationRepository`, and `EmailService` interfaces (all repository methods use `database.DBTX`). Also create `httputil/response.go` with shared response helpers.
   - _Files:_
@@ -969,7 +969,7 @@ type EmailService interface {
 
 ### Phase 2: Backend Auth
 
-- **T-005:** Create repository implementations for auth
+- [x] **T-005:** Create repository implementations for auth
   - _Implements:_ ER-001, ER-002, ER-003, ER-004
   - _Description:_ Implement `UserRepository` and `RefreshTokenRepository` (defined in `auth/types/repositories.go`) as pgx-backed structs in the auth `services` sub-package.
   - _Files:_
@@ -978,7 +978,7 @@ type EmailService interface {
   - _Done condition:_ `go build ./internal/auth/services/...` succeeds.
   - _Dependencies:_ T-004
 
-- **T-006:** Create auth service and auth middleware
+- [x] **T-006:** Create auth service and auth middleware
   - _Implements:_ ER-001, ER-002, ER-003, ER-004
   - _Description:_ Create `AuthService` with methods: `Signup(ctx, email, password, firstName, lastName) (*types.User, rawRefresh string, accessJWT string, error)` — normalizes email to lowercase via `strings.ToLower()`, validates, checks uniqueness, hashes password, inserts user, creates refresh token, generates access JWT. `Login(ctx, email, password)` — normalizes email to lowercase, finds user, compares password, same return as signup. `Logout(ctx, userID uuid.UUID)` — deletes all refresh tokens for the user from DB via `DeleteAllByUser`. `Refresh(ctx, refreshTokenRaw string)` — hashes, looks up, verifies expiry, deletes old, creates new, generates new access JWT. Create `AuthMiddleware` with `Authenticate` method — reads `access_token` cookie, calls `ValidateAccessToken`, stores `TokenClaims` in context. Export `GetUserClaims(ctx)` helper.
   - _Files:_
@@ -987,7 +987,7 @@ type EmailService interface {
   - _Done condition:_ `go build ./internal/auth/services/...` and `go build ./internal/auth/handlers/...` succeed.
   - _Dependencies:_ T-003, T-005
 
-- **T-007:** Create auth + user handlers and wire routes
+- [x] **T-007:** Create auth + user handlers and wire routes
   - _Implements:_ ER-001, ER-002, ER-003, ER-004
   - _Description:_ Create `AuthHandler` with HTTP handlers for signup, login, logout, refresh. Each handler: parses JSON body, validates input, calls auth service, sets/clears httpOnly cookies, writes JSON response. Cookie config: `access_token` (path `/`, httpOnly, SameSite=Lax, Secure in prod, MaxAge from config), `refresh_token` (path `/api/auth`, same flags, MaxAge from config). Create `UserHandler` with `GetMe` (reads claims from context, queries user by ID) and `UpdateMe`. Create `UserService` for user business logic. Wire all routes in `app.go`: public auth routes (signup, login, refresh, logout), authenticated user routes. Logout is a public route (no auth middleware) — it parses the access token directly without expiry validation to extract the user ID. Instantiate repos, services, handlers in `NewApp()` passing the pool.
   - _Files:_
@@ -1000,7 +1000,7 @@ type EmailService interface {
 
 ### Phase 3: Backend Organizations & Memberships
 
-- **T-008:** Create organization and membership repository implementations
+- [x] **T-008:** Create organization and membership repository implementations
   - _Implements:_ ER-005, ER-006
   - _Description:_ Implement `OrganizationRepository` (Create, GetByID, GetBySlug, Update, ListAll) and `MembershipRepository` (Create, GetByUserAndOrg, ListByUser with org join, ListByOrg with user join, Delete, CountAdmins) using pgx queries against the schema from T-001. Both implement interfaces defined in `types/repositories.go`.
   - _Files:_
@@ -1009,7 +1009,7 @@ type EmailService interface {
   - _Done condition:_ `go build ./internal/administration/services/...` succeeds.
   - _Dependencies:_ T-004
 
-- **T-009:** Create organization service
+- [x] **T-009:** Create organization service
   - _Implements:_ ER-005, ER-006, ER-009
   - _Description:_ Create `OrgService` that receives `*pgxpool.Pool`, `OrganizationRepository`, and `MembershipRepository` via constructor. Methods: `Create(ctx, userID, name)` — generates slug from name (lowercase, replace non-alphanumeric with hyphens, trim, append random suffix on collision), uses `database.WithTx(ctx, pool, func(tx) { ... })` to create org and admin membership atomically. `List(ctx, userID, isSuperadmin)` — returns user's orgs (via membership) or all orgs if superadmin. `Get(ctx, orgID)`. `Update(ctx, orgID, name)`. `ListMembers(ctx, orgID)`. `RemoveMember(ctx, orgID, userID)` — checks admin count, prevents removing last admin. Non-transactional methods pass the pool directly to repos (it satisfies `database.DBTX`).
   - _Files:_
@@ -1017,7 +1017,7 @@ type EmailService interface {
   - _Done condition:_ `go build ./internal/administration/services/...` succeeds.
   - _Dependencies:_ T-008
 
-- **T-010:** Create role middleware
+- [x] **T-010:** Create role middleware
   - _Implements:_ ER-009, ER-010
   - _Description:_ Create `RoleMiddleware` struct that holds `types.MembershipRepository`, `authtypes.UserRepository`, and `*pgxpool.Pool`. Imports `auth/handlers.GetUserClaims(ctx)` to read JWT claims from context. Methods: `RequireOrgMember` — reads `{orgID}` from chi URL params, queries membership for the authenticated user, allows through if membership exists OR user is superadmin (checked via `UserRepository.GetByID`), stores membership/role in context. Returns 403 if neither. `RequireOrgAdmin` — checks context for role=admin or is_superadmin (from DB). Returns 403 otherwise. `RequireSuperadmin` — reads user ID from JWT claims, queries `UserRepository.GetByID` to check current `is_superadmin` value from DB. Returns 403 if not superadmin. This ensures immediate revocation when a user is demoted — unlike JWT-claims-only checks, there is no stale-claim window.
   - _Files:_
@@ -1025,7 +1025,7 @@ type EmailService interface {
   - _Done condition:_ `go build ./internal/administration/handlers/...` succeeds.
   - _Dependencies:_ T-005 (user repo for superadmin DB check), T-006 (auth middleware for claims), T-008 (membership repo)
 
-- **T-011:** Create organization handler and wire routes
+- [x] **T-011:** Create organization handler and wire routes
   - _Implements:_ ER-005, ER-006, ER-009
   - _Description:_ Create `OrgHandler` with HTTP handlers: `Create`, `List`, `Get`, `Update`, `ListMembers`, `RemoveMember`. Wire org routes in `app.go` with role middleware: org-scoped routes use `RequireOrgMember`, admin-only actions use `RequireOrgAdmin`.
   - _Files:_
@@ -1036,7 +1036,7 @@ type EmailService interface {
 
 ### Phase 4: Backend Invitations & Superadmin
 
-- **T-012:** Create invitation repository and email service stub
+- [x] **T-012:** Create invitation repository and email service stub
   - _Implements:_ ER-007, ER-008
   - _Description:_ Implement `InvitationRepository` (Create, GetByTokenHash with org+inviter joins, GetPendingByEmailAndOrg, UpdateStatus) as a pgx-backed struct in the `services` sub-package. Create `ConsoleEmailService` that implements `types.EmailService` and logs the invite URL to stdout using `slog`.
   - _Files:_
@@ -1045,7 +1045,7 @@ type EmailService interface {
   - _Done condition:_ `go build ./internal/administration/services/...` succeeds.
   - _Dependencies:_ T-004
 
-- **T-013:** Create invitation service
+- [x] **T-013:** Create invitation service
   - _Implements:_ ER-007, ER-008
   - _Description:_ Create `InvitationService` that receives `*pgxpool.Pool`, `InvitationRepository`, `MembershipRepository`, and `EmailService` via constructor. Methods: `Create(ctx, orgID, invitedByUserID, email, role)` — checks for existing pending invite (409 if exists), checks if email is already a member (409), generates random token, stores hash, calls EmailService.SendInvitation with constructed URL, returns invitation. The `idx_invitations_pending_email_org` unique partial index provides a DB-level safety net — the repo layer catches unique violation errors (`pgconn.PgError` code `23505`) and surfaces them as a conflict error. `GetByToken(ctx, rawToken)` — hashes token, looks up with org/inviter joins, verifies status is pending and not expired. `Accept(ctx, rawToken, authenticatedUser)` — hashes token, looks up, verifies email match using `strings.EqualFold()` (403 if mismatch), verifies pending+not expired, uses `database.WithTx(ctx, pool, func(tx) { ... })` to create org membership and update invitation status to accepted atomically. Non-transactional methods pass the pool directly to repos.
   - _Files:_
@@ -1053,7 +1053,7 @@ type EmailService interface {
   - _Done condition:_ `go build ./internal/administration/services/...` succeeds.
   - _Dependencies:_ T-008, T-012
 
-- **T-014:** Create invitation handler and wire routes
+- [x] **T-014:** Create invitation handler and wire routes
   - _Implements:_ ER-007, ER-008
   - _Description:_ Create `InvitationHandler` with HTTP handlers: `Create` (parses email+role, calls service), `GetByToken` (reads token from URL, calls service), `Accept` (reads token from URL, gets user from context, calls service). Wire routes: `POST /api/organizations/{orgID}/invitations` (RequireOrgAdmin), `GET /api/invitations/{token}` (public), `POST /api/invitations/{token}/accept` (authenticated).
   - _Files:_
@@ -1062,7 +1062,7 @@ type EmailService interface {
   - _Done condition:_ `go build ./...` succeeds. Manual curl: create invite as org admin (check console for URL), GET invite token (returns org name + details), accept invite as another user (creates membership), verify new member appears in org members list.
   - _Dependencies:_ T-011, T-013
 
-- **T-015:** Create superadmin handler and wire routes
+- [x] **T-015:** Create superadmin handler and wire routes
   - _Implements:_ ER-010
   - _Description:_ Create `AdminHandler` with HTTP handlers: `ListUsers` (paginated, with search by email/name), `ToggleSuperadmin` (sets is_superadmin on user). Extend `UserRepository` interface in `auth/types/repositories.go` with `ListAll(ctx, db, page, perPage, search)` and `SetSuperadmin(ctx, db, userID, isSuperadmin)` methods, and add implementations in `auth/services/user_repo.go`. Wire routes under `/api/admin` with `RequireSuperadmin` middleware. Add a Makefile target `seed-superadmin` that runs: `psql $(DATABASE_URL) -c "UPDATE users SET is_superadmin = true WHERE LOWER(email) = LOWER('$(email)')"`.
   - _Files:_
