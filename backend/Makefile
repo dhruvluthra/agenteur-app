@@ -13,7 +13,7 @@ DATABASE_URL := $(subst @localhost:,@127.0.0.1:,$(DATABASE_URL))
 MIGRATIONS_DIR := ./migrations
 GOOSE_CMD := go run github.com/pressly/goose/v3/cmd/goose@v3.26.0
 
-.PHONY: db-up db-down db-reset db-logs db-wait db-create migrate-up migrate-down migrate-status migrate-create
+.PHONY: db-up db-down db-reset db-logs db-wait db-create migrate-up migrate-down migrate-status migrate-create seed-superadmin
 
 db-up:
 	docker compose -f docker-compose.yml --env-file .env.local up -d postgres
@@ -51,3 +51,7 @@ migrate-status:
 migrate-create:
 	@if [ -z "$(name)" ]; then echo "Usage: make migrate-create name=create_users_table"; exit 1; fi
 	@$(GOOSE_CMD) -dir $(MIGRATIONS_DIR) create "$(name)" sql
+
+seed-superadmin:
+	@if [ -z "$(email)" ]; then echo "Usage: make seed-superadmin email=user@example.com"; exit 1; fi
+	@PGPASSWORD="$(POSTGRES_PASSWORD)" psql -h "$(DB_HOST)" -p "$(DB_PORT)" -U "$(POSTGRES_USER)" -d "$(POSTGRES_DB)" -c "UPDATE users SET is_superadmin = true WHERE LOWER(email) = LOWER('$(email)');"

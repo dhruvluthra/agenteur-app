@@ -62,11 +62,12 @@ func NewApp() *App {
 	invitationService := adminservices.NewInvitationService(pool, invitationRepo, membershipRepo, emailService, userRepo, cfg.InviteBaseURL, cfg.InviteTokenTTL)
 	orgHandler := adminhandlers.NewOrgHandler(orgService)
 	invitationHandler := adminhandlers.NewInvitationHandler(invitationService, orgService)
+	adminHandler := adminhandlers.NewAdminHandler(pool, userService)
 	roleMW := adminhandlers.NewRoleMiddleware(pool, membershipRepo, userRepo)
 
 	server := &http.Server{
 		Addr:    cfg.Port,
-		Handler: NewRouter(cfg, logger, authMiddleware, roleMW, authHandler, userHandler, orgHandler, invitationHandler),
+		Handler: NewRouter(cfg, logger, authMiddleware, roleMW, authHandler, userHandler, orgHandler, invitationHandler, adminHandler),
 	}
 	return &App{
 		Config: cfg,
@@ -107,6 +108,7 @@ func NewRouter(
 	userHandler *authhandlers.UserHandler,
 	orgHandler *adminhandlers.OrgHandler,
 	invitationHandler *adminhandlers.InvitationHandler,
+	adminHandler *adminhandlers.AdminHandler,
 ) http.Handler {
 	r := chi.NewRouter()
 
@@ -146,6 +148,14 @@ func NewRouter(
 			// Organization routes
 			authenticated.Post("/organizations", orgHandler.Create)
 			authenticated.Get("/organizations", orgHandler.List)
+
+			// Superadmin routes
+			authenticated.Route("/admin", func(adminRouter chi.Router) {
+				adminRouter.Use(roleMW.RequireSuperadmin)
+
+				adminRouter.Get("/users", adminHandler.ListUsers)
+				adminRouter.Put("/users/{userID}/superadmin", adminHandler.ToggleSuperadmin)
+			})
 
 			// Org-scoped routes (require membership)
 			authenticated.Route("/organizations/{orgID}", func(orgRouter chi.Router) {

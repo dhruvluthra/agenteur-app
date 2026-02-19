@@ -33,3 +33,11 @@ func (s *UserService) Update(ctx context.Context, id uuid.UUID, params types.Upd
 	}
 	return user, nil
 }
+
+func (s *UserService) ListAll(ctx context.Context, page, perPage int, search string) ([]*types.User, int, error) {
+	return s.userRepo.ListAll(ctx, s.pool, page, perPage, search)
+}
+
+func (s *UserService) SetSuperadmin(ctx context.Context, id uuid.UUID, isSuperadmin bool) (*types.User, error) {
+	return s.userRepo.SetSuperadmin(ctx, s.pool, id, isSuperadmin)
+}
