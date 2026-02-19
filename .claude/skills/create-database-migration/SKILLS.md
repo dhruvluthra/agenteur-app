@@ -15,3 +15,4 @@ description: Create SQL database migration scripts for new features and engineer
 * For every table, include an `updated_at` field that will refect the last time that a record was updated. 
 * Use UUIDs for primary keys. 
 * Use `TEXT` fields for strings instead of `VARCHAR(n)` 
+* Use `TIMESTAMPZ` for all stored timestamps. 
