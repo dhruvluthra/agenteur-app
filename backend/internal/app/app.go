@@ -9,6 +9,8 @@ import (
 	"os/signal"
 	"syscall"
 
+	authhandlers "agenteur.ai/api/internal/auth/handlers"
+	authservices "agenteur.ai/api/internal/auth/services"
 	"agenteur.ai/api/internal/config"
 	"agenteur.ai/api/internal/middleware"
 
@@ -38,9 +40,20 @@ func NewApp() *App {
 		"service", "api",
 		"env", cfg.Env,
 	)
+
+	// Auth domain
+	userRepo := authservices.NewUserRepository()
+	tokenRepo := authservices.NewRefreshTokenRepository()
+	authService := authservices.NewAuthService(pool, userRepo, tokenRepo, cfg.JWTSecret, cfg.AccessTokenTTL, cfg.RefreshTokenTTL, cfg.BcryptCost)
+	userService := authservices.NewUserService(pool, userRepo)
+	authMiddleware := authhandlers.NewAuthMiddleware(cfg.JWTSecret)
+	secureCookies := cfg.Env != "local"
+	authHandler := authhandlers.NewAuthHandler(authService, cfg.JWTSecret, cfg.AccessTokenTTL, cfg.RefreshTokenTTL, secureCookies)
+	userHandler := authhandlers.NewUserHandler(userService)
+
 	server := &http.Server{
 		Addr:    cfg.Port,
-		Handler: NewRouter(cfg, logger),
+		Handler: NewRouter(cfg, logger, authMiddleware, authHandler, userHandler),
 	}
 	return &App{
 		Config: cfg,
@@ -72,7 +85,13 @@ func (a *App) Start() error {
 	}
 }
 
-func NewRouter(cfg *config.Config, logger *slog.Logger) http.Handler {
+func NewRouter(
+	cfg *config.Config,
+	logger *slog.Logger,
+	authMiddleware *authhandlers.AuthMiddleware,
+	authHandler *authhandlers.AuthHandler,
+	userHandler *authhandlers.UserHandler,
+) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(func(next http.Handler) http.Handler { return middleware.RequestID()(next) })
@@ -86,6 +105,21 @@ func NewRouter(cfg *config.Config, logger *slog.Logger) http.Handler {
 	r.Route("/api", func(api chi.Router) {
 		api.Use(func(next http.Handler) http.Handler {
 			return middleware.RequireJSONContentType()(next)
+		})
+
+		// Public auth routes
+		api.Post("/auth/signup", authHandler.Signup)
+		api.Post("/auth/login", authHandler.Login)
+		api.Post("/auth/refresh", authHandler.Refresh)
+		api.Post("/auth/logout", authHandler.Logout)
+
+		// Authenticated routes
+		api.Group(func(authenticated chi.Router) {
+			authenticated.Use(authMiddleware.Authenticate)
+
+			// User routes
+			authenticated.Get("/users/me", userHandler.GetMe)
+			authenticated.Put("/users/me", userHandler.UpdateMe)
 		})
 	})
 
