@@ -67,7 +67,17 @@ func NewApp() *App {
 
 	server := &http.Server{
 		Addr:    cfg.Port,
-		Handler: NewRouter(cfg, logger, authMiddleware, roleMW, authHandler, userHandler, orgHandler, invitationHandler, adminHandler),
+		Handler: NewRouter(&RouterDeps{
+			Config:            cfg,
+			Logger:            logger,
+			AuthMiddleware:    authMiddleware,
+			RoleMiddleware:    roleMW,
+			AuthHandler:       authHandler,
+			UserHandler:       userHandler,
+			OrgHandler:        orgHandler,
+			InvitationHandler: invitationHandler,
+			AdminHandler:      adminHandler,
+		}),
 	}
 	return &App{
 		Config: cfg,
@@ -99,78 +109,78 @@ func (a *App) Start() error {
 	}
 }
 
-func NewRouter(
-	cfg *config.Config,
-	logger *slog.Logger,
-	authMiddleware *authhandlers.AuthMiddleware,
-	roleMW *adminhandlers.RoleMiddleware,
-	authHandler *authhandlers.AuthHandler,
-	userHandler *authhandlers.UserHandler,
-	orgHandler *adminhandlers.OrgHandler,
-	invitationHandler *adminhandlers.InvitationHandler,
-	adminHandler *adminhandlers.AdminHandler,
-) http.Handler {
+type RouterDeps struct {
+	Config            *config.Config
+	Logger            *slog.Logger
+	AuthMiddleware    *authhandlers.AuthMiddleware
+	RoleMiddleware    *adminhandlers.RoleMiddleware
+	AuthHandler       *authhandlers.AuthHandler
+	UserHandler       *authhandlers.UserHandler
+	OrgHandler        *adminhandlers.OrgHandler
+	InvitationHandler *adminhandlers.InvitationHandler
+	AdminHandler      *adminhandlers.AdminHandler
+}
+
+func NewRouter(deps *RouterDeps) http.Handler {
 	r := chi.NewRouter()
 
-	r.Use(func(next http.Handler) http.Handler { return middleware.RequestID()(next) })
-	r.Use(func(next http.Handler) http.Handler { return middleware.RequestLogger(logger)(next) })
-	r.Use(func(next http.Handler) http.Handler { return middleware.CORS(cfg.CORSAllowedOrigins)(next) })
+	r.Use(middleware.RequestID())
+	r.Use(middleware.RequestLogger(deps.Logger))
+	r.Use(middleware.CORS(deps.Config.CORSAllowedOrigins))
 
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("server is awake"))
 	})
 
 	r.Route("/api", func(api chi.Router) {
-		api.Use(func(next http.Handler) http.Handler {
-			return middleware.RequireJSONContentType()(next)
-		})
+		api.Use(middleware.RequireJSONContentType())
 
 		// Public auth routes
-		api.Post("/auth/signup", authHandler.Signup)
-		api.Post("/auth/login", authHandler.Login)
-		api.Post("/auth/refresh", authHandler.Refresh)
-		api.Post("/auth/logout", authHandler.Logout)
+		api.Post("/auth/signup", deps.AuthHandler.Signup)
+		api.Post("/auth/login", deps.AuthHandler.Login)
+		api.Post("/auth/refresh", deps.AuthHandler.Refresh)
+		api.Post("/auth/logout", deps.AuthHandler.Logout)
 
 		// Public invitation view (token is the auth)
-		api.Get("/invitations/{token}", invitationHandler.GetByToken)
+		api.Get("/invitations/{token}", deps.InvitationHandler.GetByToken)
 
 		// Authenticated routes
 		api.Group(func(authenticated chi.Router) {
-			authenticated.Use(authMiddleware.Authenticate)
+			authenticated.Use(deps.AuthMiddleware.Authenticate)
 
 			// User routes
-			authenticated.Get("/users/me", userHandler.GetMe)
-			authenticated.Put("/users/me", userHandler.UpdateMe)
+			authenticated.Get("/users/me", deps.UserHandler.GetMe)
+			authenticated.Put("/users/me", deps.UserHandler.UpdateMe)
 
 			// Accept invitation (authenticated)
-			authenticated.Post("/invitations/{token}/accept", invitationHandler.Accept)
+			authenticated.Post("/invitations/{token}/accept", deps.InvitationHandler.Accept)
 
 			// Organization routes
-			authenticated.Post("/organizations", orgHandler.Create)
-			authenticated.Get("/organizations", orgHandler.List)
+			authenticated.Post("/organizations", deps.OrgHandler.Create)
+			authenticated.Get("/organizations", deps.OrgHandler.List)
 
 			// Superadmin routes
 			authenticated.Route("/admin", func(adminRouter chi.Router) {
-				adminRouter.Use(roleMW.RequireSuperadmin)
+				adminRouter.Use(deps.RoleMiddleware.RequireSuperadmin)
 
-				adminRouter.Get("/users", adminHandler.ListUsers)
-				adminRouter.Put("/users/{userID}/superadmin", adminHandler.ToggleSuperadmin)
+				adminRouter.Get("/users", deps.AdminHandler.ListUsers)
+				adminRouter.Put("/users/{userID}/superadmin", deps.AdminHandler.ToggleSuperadmin)
 			})
 
 			// Org-scoped routes (require membership)
 			authenticated.Route("/organizations/{orgID}", func(orgRouter chi.Router) {
-				orgRouter.Use(roleMW.RequireOrgMember)
+				orgRouter.Use(deps.RoleMiddleware.RequireOrgMember)
 
-				orgRouter.Get("/", orgHandler.Get)
-				orgRouter.Get("/members", orgHandler.ListMembers)
+				orgRouter.Get("/", deps.OrgHandler.Get)
+				orgRouter.Get("/members", deps.OrgHandler.ListMembers)
 
 				// Admin-only org actions
 				orgRouter.Group(func(adminRouter chi.Router) {
-					adminRouter.Use(roleMW.RequireOrgAdmin)
+					adminRouter.Use(deps.RoleMiddleware.RequireOrgAdmin)
 
-					adminRouter.Put("/", orgHandler.Update)
-					adminRouter.Delete("/members/{userID}", orgHandler.RemoveMember)
-					adminRouter.Post("/invitations", invitationHandler.Create)
+					adminRouter.Put("/", deps.OrgHandler.Update)
+					adminRouter.Delete("/members/{userID}", deps.OrgHandler.RemoveMember)
+					adminRouter.Post("/invitations", deps.InvitationHandler.Create)
 				})
 			})
 		})
