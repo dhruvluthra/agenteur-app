@@ -22,7 +22,7 @@ func testRouter() http.Handler {
 	}
 	authMW := authhandlers.NewAuthMiddleware(cfg.JWTSecret)
 	roleMW := adminhandlers.NewRoleMiddleware(nil, nil, nil)
-	return NewRouter(cfg, logger, authMW, roleMW, nil, nil, nil)
+	return NewRouter(cfg, logger, authMW, roleMW, nil, nil, nil, nil)
 }
 
 func TestNewRouterHealthIncludesRequestID(t *testing.T) {

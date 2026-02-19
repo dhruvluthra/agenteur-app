@@ -56,13 +56,17 @@ func NewApp() *App {
 	// Administration domain
 	orgRepo := adminservices.NewOrganizationRepository()
 	membershipRepo := adminservices.NewMembershipRepository()
+	invitationRepo := adminservices.NewInvitationRepository()
+	emailService := adminservices.NewConsoleEmailService()
 	orgService := adminservices.NewOrgService(pool, orgRepo, membershipRepo)
+	invitationService := adminservices.NewInvitationService(pool, invitationRepo, membershipRepo, emailService, userRepo, cfg.InviteBaseURL, cfg.InviteTokenTTL)
 	orgHandler := adminhandlers.NewOrgHandler(orgService)
+	invitationHandler := adminhandlers.NewInvitationHandler(invitationService, orgService)
 	roleMW := adminhandlers.NewRoleMiddleware(pool, membershipRepo, userRepo)
 
 	server := &http.Server{
 		Addr:    cfg.Port,
-		Handler: NewRouter(cfg, logger, authMiddleware, roleMW, authHandler, userHandler, orgHandler),
+		Handler: NewRouter(cfg, logger, authMiddleware, roleMW, authHandler, userHandler, orgHandler, invitationHandler),
 	}
 	return &App{
 		Config: cfg,
@@ -102,6 +106,7 @@ func NewRouter(
 	authHandler *authhandlers.AuthHandler,
 	userHandler *authhandlers.UserHandler,
 	orgHandler *adminhandlers.OrgHandler,
+	invitationHandler *adminhandlers.InvitationHandler,
 ) http.Handler {
 	r := chi.NewRouter()
 
@@ -124,6 +129,9 @@ func NewRouter(
 		api.Post("/auth/refresh", authHandler.Refresh)
 		api.Post("/auth/logout", authHandler.Logout)
 
+		// Public invitation view (token is the auth)
+		api.Get("/invitations/{token}", invitationHandler.GetByToken)
+
 		// Authenticated routes
 		api.Group(func(authenticated chi.Router) {
 			authenticated.Use(authMiddleware.Authenticate)
@@ -131,6 +139,9 @@ func NewRouter(
 			// User routes
 			authenticated.Get("/users/me", userHandler.GetMe)
 			authenticated.Put("/users/me", userHandler.UpdateMe)
+
+			// Accept invitation (authenticated)
+			authenticated.Post("/invitations/{token}/accept", invitationHandler.Accept)
 
 			// Organization routes
 			authenticated.Post("/organizations", orgHandler.Create)
@@ -149,6 +160,7 @@ func NewRouter(
 
 					adminRouter.Put("/", orgHandler.Update)
 					adminRouter.Delete("/members/{userID}", orgHandler.RemoveMember)
+					adminRouter.Post("/invitations", invitationHandler.Create)
 				})
 			})
 		})
