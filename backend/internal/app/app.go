@@ -9,6 +9,8 @@ import (
 	"os/signal"
 	"syscall"
 
+	adminhandlers "agenteur.ai/api/internal/administration/handlers"
+	adminservices "agenteur.ai/api/internal/administration/services"
 	authhandlers "agenteur.ai/api/internal/auth/handlers"
 	authservices "agenteur.ai/api/internal/auth/services"
 	"agenteur.ai/api/internal/config"
@@ -51,9 +53,16 @@ func NewApp() *App {
 	authHandler := authhandlers.NewAuthHandler(authService, cfg.JWTSecret, cfg.AccessTokenTTL, cfg.RefreshTokenTTL, secureCookies)
 	userHandler := authhandlers.NewUserHandler(userService)
 
+	// Administration domain
+	orgRepo := adminservices.NewOrganizationRepository()
+	membershipRepo := adminservices.NewMembershipRepository()
+	orgService := adminservices.NewOrgService(pool, orgRepo, membershipRepo)
+	orgHandler := adminhandlers.NewOrgHandler(orgService)
+	roleMW := adminhandlers.NewRoleMiddleware(pool, membershipRepo, userRepo)
+
 	server := &http.Server{
 		Addr:    cfg.Port,
-		Handler: NewRouter(cfg, logger, authMiddleware, authHandler, userHandler),
+		Handler: NewRouter(cfg, logger, authMiddleware, roleMW, authHandler, userHandler, orgHandler),
 	}
 	return &App{
 		Config: cfg,
@@ -89,8 +98,10 @@ func NewRouter(
 	cfg *config.Config,
 	logger *slog.Logger,
 	authMiddleware *authhandlers.AuthMiddleware,
+	roleMW *adminhandlers.RoleMiddleware,
 	authHandler *authhandlers.AuthHandler,
 	userHandler *authhandlers.UserHandler,
+	orgHandler *adminhandlers.OrgHandler,
 ) http.Handler {
 	r := chi.NewRouter()
 
@@ -120,6 +131,26 @@ func NewRouter(
 			// User routes
 			authenticated.Get("/users/me", userHandler.GetMe)
 			authenticated.Put("/users/me", userHandler.UpdateMe)
+
+			// Organization routes
+			authenticated.Post("/organizations", orgHandler.Create)
+			authenticated.Get("/organizations", orgHandler.List)
+
+			// Org-scoped routes (require membership)
+			authenticated.Route("/organizations/{orgID}", func(orgRouter chi.Router) {
+				orgRouter.Use(roleMW.RequireOrgMember)
+
+				orgRouter.Get("/", orgHandler.Get)
+				orgRouter.Get("/members", orgHandler.ListMembers)
+
+				// Admin-only org actions
+				orgRouter.Group(func(adminRouter chi.Router) {
+					adminRouter.Use(roleMW.RequireOrgAdmin)
+
+					adminRouter.Put("/", orgHandler.Update)
+					adminRouter.Delete("/members/{userID}", orgHandler.RemoveMember)
+				})
+			})
 		})
 	})
 

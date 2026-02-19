@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	adminhandlers "agenteur.ai/api/internal/administration/handlers"
 	authhandlers "agenteur.ai/api/internal/auth/handlers"
 	"agenteur.ai/api/internal/config"
 	imiddleware "agenteur.ai/api/internal/middleware"
@@ -20,8 +21,8 @@ func testRouter() http.Handler {
 		JWTSecret:          "test-secret",
 	}
 	authMW := authhandlers.NewAuthMiddleware(cfg.JWTSecret)
-	// Pass nil handlers — these routes won't be hit in these tests
-	return NewRouter(cfg, logger, authMW, nil, nil)
+	roleMW := adminhandlers.NewRoleMiddleware(nil, nil, nil)
+	return NewRouter(cfg, logger, authMW, roleMW, nil, nil, nil)
 }
 
 func TestNewRouterHealthIncludesRequestID(t *testing.T) {
