@@ -6,27 +6,29 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"agenteur.ai/api/internal/config"
 	"agenteur.ai/api/internal/middleware"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type App struct {
 	Config *config.Config
 	Server *http.Server
-	DB     *pgx.Conn
+	DB     *pgxpool.Pool
 }
 
 func NewApp() *App {
 	cfg := config.Load()
-	db, err := pgx.Connect(context.Background(), cfg.DatabaseURL)
+	pool, err := pgxpool.New(context.Background(), cfg.DatabaseURL)
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := db.Ping(context.Background()); err != nil {
+	if err := pool.Ping(context.Background()); err != nil {
 		log.Fatal("db ping failed:", err)
 	}
 	log.Println("db connected successfully")
@@ -43,13 +45,31 @@ func NewApp() *App {
 	return &App{
 		Config: cfg,
 		Server: server,
-		DB:     db,
+		DB:     pool,
 	}
 }
 
 func (a *App) Start() error {
 	log.Println("starting server on port", a.Config.Port)
-	return a.Server.ListenAndServe()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- a.Server.ListenAndServe()
+	}()
+
+	select {
+	case err := <-errCh:
+		return err
+	case <-quit:
+		log.Println("shutting down gracefully...")
+		a.DB.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), 10*1e9) // 10s
+		defer cancel()
+		return a.Server.Shutdown(ctx)
+	}
 }
 
 func NewRouter(cfg *config.Config, logger *slog.Logger) http.Handler {
@@ -64,7 +84,9 @@ func NewRouter(cfg *config.Config, logger *slog.Logger) http.Handler {
 	})
 
 	r.Route("/api", func(api chi.Router) {
-		// Future group-specific middleware (auth/admin) can be attached here.
+		api.Use(func(next http.Handler) http.Handler {
+			return middleware.RequireJSONContentType()(next)
+		})
 	})
 
 	return r

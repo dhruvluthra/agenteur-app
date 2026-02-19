@@ -41,6 +41,7 @@ func CORS(allowedOrigins []string) Middleware {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Methods", allowMethods)
 			w.Header().Set("Access-Control-Allow-Headers", allowHeaders)
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
 			w.Header().Set("Access-Control-Expose-Headers", exposeHeaders)
 
 			if isPreflight {
